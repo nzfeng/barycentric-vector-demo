@@ -115,17 +115,15 @@ void testFunction() {
 
         double origLength = w0.norm(*geometry);
 
-        std::cerr << dot(*geometry, w0, w90) << std::endl;
+        // std::cerr << dot(*geometry, w0, w90) << std::endl;
+        // std::cerr << dot(*geometry, w0, w180) << std::endl;
+        // std::cerr << dot(*geometry, w0, w270) << std::endl;
+        // std::cerr << dot(*geometry, w0, w360) << std::endl;
+
         assert(std::abs(dot(*geometry, w0, w90)) < epsilon);
-
-        std::cerr << dot(*geometry, w0, w180) << std::endl;
-        assert(std::abs(dot(*geometry, w0, w180) + 1.) < epsilon);
-
-        std::cerr << dot(*geometry, w0, w270) << std::endl;
+        assert(std::abs(dot(*geometry, w0, w180) + origLength * origLength) < epsilon);
         assert(std::abs(dot(*geometry, w0, w270)) < epsilon);
-
-        std::cerr << dot(*geometry, w0, w360) << std::endl;
-        assert(std::abs(dot(*geometry, w0, w360) - 1.) < epsilon);
+        assert(std::abs(dot(*geometry, w0, w360) - origLength * origLength) < epsilon);
 
         assert(std::abs(origLength - w90.norm(*geometry)) < epsilon);
         assert(std::abs(origLength - w180.norm(*geometry)) < epsilon);
