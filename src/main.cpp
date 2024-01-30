@@ -66,7 +66,7 @@ void displayEdgeVectors(const EdgeData<BarycentricVector>& X, const std::string&
     Vector3 bboxMin, bboxMax;
     std::tie(bboxMin, bboxMax) = boundingBox(*geometry);
     double radius = (bboxMax - bboxMin).norm();
-    double charLength = radius / 50.;
+    double charLength = radius / 100.;
 
     TraceGeodesicResult tracedGeodesic;
     TraceOptions traceOptions;
@@ -82,8 +82,13 @@ void displayEdgeVectors(const EdgeData<BarycentricVector>& X, const std::string&
     for (Edge e : mesh->edges()) {
         BarycentricVector edgeVec(e, {-1, 1});
         edgeVec /= edgeVec.norm(*geometry);
+        BarycentricVector edgeVec90 = edgeVec.rotated90(*geometry);
+        // if (sharedFace(edgeVec, X[e]) == Face()) edgeVec = edgeVec.inFace(X[e].face);
         double cosTheta = dot(*geometry, X[e], edgeVec);
-        double sinTheta = dot(*geometry, X[e], edgeVec.rotated90(*geometry));
+        if (sharedFace(edgeVec90, X[e]) == Face()) {
+            edgeVec90 = edgeVec.inFace(X[e].face).rotated90(*geometry);
+        }
+        double sinTheta = dot(*geometry, X[e], edgeVec90);
         Vector2 rotatedVec = {cosTheta, sinTheta};
         Vector2 vec = rotatedVec / maxLength * charLength;
         tracedGeodesic = traceGeodesic(*geometry, SurfacePoint(e, 0.5), vec, traceOptions);
@@ -96,7 +101,7 @@ void displayEdgeVectors(const EdgeData<BarycentricVector>& X, const std::string&
             edgeInds.push_back({offset + j, offset + j + 1});
         }
     }
-    polyscope::registerCurveNetwork(name, positions, edgeInds);
+    polyscope::registerCurveNetwork(name, positions, edgeInds)->setRadius(0.00025);
     std::cerr << name << " displayed" << std::endl;
 }
 
@@ -191,13 +196,13 @@ void testEdgeRotations() {
 
     std::cerr << "Done testing." << std::endl;
 
-    // // Visualize the vectors, before and after -- just draw the barycentric vectors as single vectors emanating from
-    // // edge midpoints, even though that's not really the case.
-    // displayEdgeVectors(initVectors, "initial vectors");
-    // displayEdgeVectors(vectorsRotated90, "rotated 90");
-    // displayEdgeVectors(vectorsRotated180, "rotated 180");
-    // displayEdgeVectors(vectorsRotated270, "rotated 270");
-    // displayEdgeVectors(vectorsRotated360, "rotated 360");
+    // Visualize the vectors, before and after -- just draw the barycentric vectors as single vectors emanating from
+    // edge midpoints, even though that's not really the case.
+    displayEdgeVectors(initVectors, "initial vectors");
+    displayEdgeVectors(vectorsRotated90, "rotated 90");
+    displayEdgeVectors(vectorsRotated180, "rotated 180");
+    displayEdgeVectors(vectorsRotated270, "rotated 270");
+    displayEdgeVectors(vectorsRotated360, "rotated 360");
 }
 
 void testAxisAngleRotations() {
@@ -226,15 +231,17 @@ void testAxisAngleRotations() {
     //  - check that the vector length is preserved after rotation
     EdgeData<BarycentricVector> rotatedEdgeVecs(*mesh);
     FaceData<BarycentricVector> rotatedFaceVecs(*mesh);
+    EdgeData<double> edgeRotations(*mesh);
+    FaceData<double> faceRotations(*mesh);
     double epsilon = 1e-5;
     for (Edge e : mesh->edges()) {
         // rotate by a random amount
         double angle = randomReal(-2. * M_PI, 2. * M_PI);
         rotatedEdgeVecs[e] = initEdgeVecs[e].rotated(*geometry, angle);
+        edgeRotations[e] = angle * 180. / M_PI;
 
         double origLength = initEdgeVecs[e].norm(*geometry);
         double rotLength = rotatedEdgeVecs[e].norm(*geometry);
-        std::cerr << origLength << " " << rotLength << std::endl;
         assert(std::abs(origLength - rotLength) < epsilon);
         assert(std::abs(dot(*geometry, initEdgeVecs[e], rotatedEdgeVecs[e]) -
                         std::cos(angle) * origLength * rotLength) < epsilon);
@@ -244,6 +251,7 @@ void testAxisAngleRotations() {
         // rotate by a random amount
         double angle = randomReal(-2. * M_PI, 2. * M_PI);
         rotatedFaceVecs[f] = initFaceVecs[f].rotated(*geometry, angle);
+        faceRotations[f] = angle * 180. / M_PI;
 
         double origLength = initFaceVecs[f].norm(*geometry);
         double rotLength = rotatedFaceVecs[f].norm(*geometry);
@@ -253,7 +261,11 @@ void testAxisAngleRotations() {
     }
 
     displayEdgeVectors(initEdgeVecs, "initial edge vectors");
+    displayEdgeVectors(rotatedEdgeVecs, "rotated edge vectors");
+    psMesh->addEdgeScalarQuantity("edge vector angles", edgeRotations);
     displayFaceVectors(initFaceVecs, "initial face vectors");
+    displayFaceVectors(rotatedFaceVecs, "rotated face vectors");
+    psMesh->addFaceScalarQuantity("face vector angles", faceRotations);
 
     std::cerr << "Done testing." << std::endl;
 }
@@ -292,7 +304,7 @@ int main(int argc, char** argv) {
         psMesh->setAllPermutations(polyscopePermutations(*mesh));
     }
 
-    testEdgeRotations();
+    // testEdgeRotations();
     testAxisAngleRotations();
 
     polyscope::show();
