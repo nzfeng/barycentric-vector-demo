@@ -44,42 +44,94 @@ std::tuple<Vector3, Vector3> boundingBox(VertexPositionGeometry& geometry) {
     return std::make_tuple(bboxMin, bboxMax);
 }
 
-// void displayEdgeMidpointVectors(const EdgeData<BarycentricVector>& X, const std::string& name) {
+BarycentricVector barycentricVectorInFace(const Halfedge& he_, const Face& f) {
 
-//     Vector3 bboxMin, bboxMax;
-//     std::tie(bboxMin, bboxMax) = boundingBox(*geometry);
-//     double radius = (bboxMax - bboxMin).norm();
-//     double charLength = radius / 50.;
+    int eIdx = 0;
+    double sign = 0.;
+    for (Halfedge he : f.adjacentHalfedges()) {
+        if (he.edge() == he_.edge()) {
+            sign = (he.tailVertex() == he_.tailVertex() && he.tipVertex() == he_.tipVertex()) ? 1. : -1.;
+            break;
+        }
+        eIdx++;
+    }
+    Vector3 faceCoords = {0, 0, 0};
+    faceCoords[(eIdx + 1) % 3] = 1;
+    faceCoords[eIdx] = -1;
+    return BarycentricVector(f, sign * faceCoords);
+}
 
-//     TraceGeodesicResult tracedGeodesic;
-//     TraceOptions traceOptions;
-//     traceOptions.includePath = true;
-//     std::vector<std::array<size_t, 2>> edgeInds;
-//     std::vector<Vector3> positions;
+void displayEdgeVectors(const EdgeData<BarycentricVector>& X, const std::string& name) {
 
-//     double maxLength = 0.;
-//     for (Edge e : mesh->edges()) {
-//         maxLength = std::max(maxLength, X[e].norm(*geometry));
-//     }
+    Vector3 bboxMin, bboxMax;
+    std::tie(bboxMin, bboxMax) = boundingBox(*geometry);
+    double radius = (bboxMax - bboxMin).norm();
+    double charLength = radius / 50.;
 
-//     for (Edge e : mesh->edges()) {
-//         Vector2 vec = Vector2::fromComplex(X[i]) / maxLength * charLength;
-//         tracedGeodesic = traceGeodesic(*geometry, SurfacePoint(e, 0.5), vec, traceOptions);
-//         std::vector<SurfacePoint>& pathPoints = tracedGeodesic.pathPoints;
-//         int offset = positions.size();
-//         for (SurfacePoint& pt : pathPoints) {
-//             positions.push_back(pt.interpolate(geometry->vertexPositions));
-//         }
-//         for (size_t j = 0; j < pathPoints.size() - 1; j++) {
-//             edgeInds.push_back({offset + j, offset + j + 1});
-//         }
-//     }
-//     polyscope::registerCurveNetwork(name, positions, edgeInds);
-// }
+    TraceGeodesicResult tracedGeodesic;
+    TraceOptions traceOptions;
+    traceOptions.includePath = true;
+    std::vector<std::array<size_t, 2>> edgeInds;
+    std::vector<Vector3> positions;
 
-void testFunction() {
+    double maxLength = 0.;
+    for (Edge e : mesh->edges()) {
+        maxLength = std::max(maxLength, X[e].norm(*geometry));
+    }
 
-    std::cerr << "Testing..." << std::endl;
+    for (Edge e : mesh->edges()) {
+        BarycentricVector edgeVec(e, {-1, 1});
+        edgeVec /= edgeVec.norm(*geometry);
+        double cosTheta = dot(*geometry, X[e], edgeVec);
+        double sinTheta = dot(*geometry, X[e], edgeVec.rotated90(*geometry));
+        Vector2 rotatedVec = {cosTheta, sinTheta};
+        Vector2 vec = rotatedVec / maxLength * charLength;
+        tracedGeodesic = traceGeodesic(*geometry, SurfacePoint(e, 0.5), vec, traceOptions);
+        std::vector<SurfacePoint>& pathPoints = tracedGeodesic.pathPoints;
+        int offset = positions.size();
+        for (SurfacePoint& pt : pathPoints) {
+            positions.push_back(pt.interpolate(geometry->vertexPositions));
+        }
+        for (size_t j = 0; j < pathPoints.size() - 1; j++) {
+            edgeInds.push_back({offset + j, offset + j + 1});
+        }
+    }
+    polyscope::registerCurveNetwork(name, positions, edgeInds);
+    std::cerr << name << " displayed" << std::endl;
+}
+
+void displayFaceVectors(const FaceData<BarycentricVector>& X, const std::string& name) {
+
+    double maxLength = 0.;
+    for (Face f : mesh->faces()) {
+        maxLength = std::max(maxLength, X[f].norm(*geometry));
+    }
+
+    FaceData<Vector2> vecField(*mesh);
+    FaceData<Vector3> fBasisX(*mesh);
+    FaceData<Vector3> fBasisY(*mesh);
+    geometry->requireFaceNormals();
+    for (Face f : mesh->faces()) {
+        BarycentricVector edgeVec = barycentricVectorInFace(f.halfedge(), f);
+        edgeVec /= edgeVec.norm(*geometry);
+        double cosTheta = dot(*geometry, X[f], edgeVec);
+        double sinTheta = dot(*geometry, X[f], edgeVec.rotated90(*geometry));
+        Vector2 rotatedVec = {cosTheta, sinTheta};
+        vecField[f] = rotatedVec;
+
+        Vector3 xVec = geometry->halfedgeVector(f.halfedge());
+        xVec /= xVec.norm();
+        fBasisX[f] = xVec;
+        fBasisY[f] = cross(geometry->faceNormals[f], xVec);
+    }
+    geometry->unrequireFaceNormals();
+    psMesh->addFaceTangentVectorQuantity(name, vecField, fBasisX, fBasisY);
+    std::cerr << name << " displayed" << std::endl;
+}
+
+void testEdgeRotations() {
+
+    std::cerr << "testEdgeRotations()..." << std::endl;
 
     // Put random vectors on edges.
     EdgeData<BarycentricVector> initVectors(*mesh);
@@ -119,6 +171,12 @@ void testFunction() {
         // std::cerr << dot(*geometry, w0, w180) << std::endl;
         // std::cerr << dot(*geometry, w0, w270) << std::endl;
         // std::cerr << dot(*geometry, w0, w360) << std::endl;
+        // std::cerr << "origLength: " << origLength << std::endl;
+        // std::cerr << w90.norm(*geometry) << std::endl;
+        // std::cerr << w180.norm(*geometry) << std::endl;
+        // std::cerr << w270.norm(*geometry) << std::endl;
+        // std::cerr << w360.norm(*geometry) << std::endl;
+        // std::cerr << "\n" << std::endl;
 
         assert(std::abs(dot(*geometry, w0, w90)) < epsilon);
         assert(std::abs(dot(*geometry, w0, w180) + origLength * origLength) < epsilon);
@@ -131,13 +189,71 @@ void testFunction() {
         assert(std::abs(origLength - w360.norm(*geometry)) < epsilon);
     }
 
+    std::cerr << "Done testing." << std::endl;
+
     // // Visualize the vectors, before and after -- just draw the barycentric vectors as single vectors emanating from
     // // edge midpoints, even though that's not really the case.
-    // displayEdgeMidpointVectors(initVectors, "initial vectors");
-    // displayEdgeMidpointVectors(vectorsRotated90, "rotated 90");
-    // displayEdgeMidpointVectors(vectorsRotated180, "rotated 180");
-    // displayEdgeMidpointVectors(vectorsRotated270, "rotated 270");
-    // displayEdgeMidpointVectors(vectorsRotated360, "rotated 360");
+    // displayEdgeVectors(initVectors, "initial vectors");
+    // displayEdgeVectors(vectorsRotated90, "rotated 90");
+    // displayEdgeVectors(vectorsRotated180, "rotated 180");
+    // displayEdgeVectors(vectorsRotated270, "rotated 270");
+    // displayEdgeVectors(vectorsRotated360, "rotated 360");
+}
+
+void testAxisAngleRotations() {
+
+    std::cerr << "testAxisAngleRotations()..." << std::endl;
+
+    // Put random vectors on edges and faces.
+    EdgeData<BarycentricVector> initEdgeVecs(*mesh);
+    FaceData<BarycentricVector> initFaceVecs(*mesh);
+    for (Edge e : mesh->edges()) {
+        double t = unitRand();
+        Vector2 edgeCoords = {t, -t};
+        BarycentricVector w(e, edgeCoords);
+        initEdgeVecs[e] = w;
+    }
+    for (Face f : mesh->faces()) {
+        double alpha = unitRand();
+        double beta = unitRand();
+        Vector3 faceCoords = {alpha, beta, -alpha - beta};
+        BarycentricVector w(f, faceCoords);
+        initFaceVecs[f] = w;
+    }
+
+    // Rotate vectors and perform some sanity checks:
+    //  - check that the inner product between vec. and rotated vector is as expected
+    //  - check that the vector length is preserved after rotation
+    EdgeData<BarycentricVector> rotatedEdgeVecs(*mesh);
+    FaceData<BarycentricVector> rotatedFaceVecs(*mesh);
+    double epsilon = 1e-5;
+    for (Edge e : mesh->edges()) {
+        // rotate by a random amount
+        double angle = randomReal(-2. * M_PI, 2. * M_PI);
+        rotatedEdgeVecs[e] = initEdgeVecs[e].rotated(*geometry, angle);
+
+        double origLength = initEdgeVecs[e].norm(*geometry);
+        double rotLength = rotatedEdgeVecs[e].norm(*geometry);
+        std::cerr << origLength << " " << rotLength << std::endl;
+        assert(std::abs(origLength - rotLength) < epsilon);
+        assert(std::abs(dot(*geometry, initEdgeVecs[e], rotatedEdgeVecs[e]) -
+                        std::cos(angle) * origLength * rotLength) < epsilon);
+    }
+    std::cerr << "edge vectors tested" << std::endl;
+    for (Face f : mesh->faces()) {
+        // rotate by a random amount
+        double angle = randomReal(-2. * M_PI, 2. * M_PI);
+        rotatedFaceVecs[f] = initFaceVecs[f].rotated(*geometry, angle);
+
+        double origLength = initFaceVecs[f].norm(*geometry);
+        double rotLength = rotatedFaceVecs[f].norm(*geometry);
+        assert(std::abs(origLength - rotLength) < epsilon);
+        assert(std::abs(dot(*geometry, initFaceVecs[f], rotatedFaceVecs[f]) -
+                        std::cos(angle) * origLength * rotLength) < epsilon);
+    }
+
+    displayEdgeVectors(initEdgeVecs, "initial edge vectors");
+    displayFaceVectors(initFaceVecs, "initial face vectors");
 
     std::cerr << "Done testing." << std::endl;
 }
@@ -176,7 +292,8 @@ int main(int argc, char** argv) {
         psMesh->setAllPermutations(polyscopePermutations(*mesh));
     }
 
-    testFunction();
+    testEdgeRotations();
+    testAxisAngleRotations();
 
     polyscope::show();
 
