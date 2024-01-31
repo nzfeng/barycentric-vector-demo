@@ -83,7 +83,6 @@ void displayEdgeVectors(const EdgeData<BarycentricVector>& X, const std::string&
         BarycentricVector edgeVec(e, {-1, 1});
         edgeVec /= edgeVec.norm(*geometry);
         BarycentricVector edgeVec90 = edgeVec.rotated90(*geometry);
-        // if (sharedFace(edgeVec, X[e]) == Face()) edgeVec = edgeVec.inFace(X[e].face);
         double cosTheta = dot(*geometry, X[e], edgeVec);
         if (sharedFace(edgeVec90, X[e]) == Face()) {
             edgeVec90 = edgeVec.inFace(X[e].face).rotated90(*geometry);
@@ -235,8 +234,8 @@ void testAxisAngleRotations() {
     FaceData<double> faceRotations(*mesh);
     double epsilon = 1e-5;
     for (Edge e : mesh->edges()) {
-        // rotate by a random amount
-        double angle = randomReal(-2. * M_PI, 2. * M_PI);
+        // double angle = randomReal(-2. * M_PI, 2. * M_PI); // rotate by a random amount
+        double angle = -45. * M_PI / 180.; // test \pm 45, 135, 225, 315
         rotatedEdgeVecs[e] = initEdgeVecs[e].rotated(*geometry, angle);
         edgeRotations[e] = angle * 180. / M_PI;
 
@@ -246,7 +245,6 @@ void testAxisAngleRotations() {
         assert(std::abs(dot(*geometry, initEdgeVecs[e], rotatedEdgeVecs[e]) -
                         std::cos(angle) * origLength * rotLength) < epsilon);
     }
-    std::cerr << "edge vectors tested" << std::endl;
     for (Face f : mesh->faces()) {
         // rotate by a random amount
         double angle = randomReal(-2. * M_PI, 2. * M_PI);
@@ -262,10 +260,35 @@ void testAxisAngleRotations() {
 
     displayEdgeVectors(initEdgeVecs, "initial edge vectors");
     displayEdgeVectors(rotatedEdgeVecs, "rotated edge vectors");
-    psMesh->addEdgeScalarQuantity("edge vector angles", edgeRotations);
+    // something seems up with GC/Polyscope edge permutations that prevents this visualization from being reliable
+    // psMesh->addEdgeScalarQuantity("edge vector angles", edgeRotations.toVector());
     displayFaceVectors(initFaceVecs, "initial face vectors");
     displayFaceVectors(rotatedFaceVecs, "rotated face vectors");
     psMesh->addFaceScalarQuantity("face vector angles", faceRotations);
+
+    std::cerr << "Done testing." << std::endl;
+}
+
+void testFaceConversion() {
+
+    std::cerr << "testFaceConversion()..." << std::endl;
+
+    // Put random vectors on edges and faces.
+    EdgeData<BarycentricVector> initEdgeVecs(*mesh);
+    FaceData<BarycentricVector> initFaceVecs(*mesh);
+    for (Edge e : mesh->edges()) {
+        initEdgeVecs[e] = BarycentricVector(e, {0, 0});
+    }
+    for (Face f : mesh->faces()) {
+        Edge e = f.halfedge().edge();
+        double t = unitRand();
+        Vector2 edgeCoords = {t, -t};
+        BarycentricVector w(e, edgeCoords);
+        initEdgeVecs[e] = w;
+        initFaceVecs[f] = w.inFace(f);
+    }
+    displayEdgeVectors(initEdgeVecs, "edge vectors");
+    displayFaceVectors(initFaceVecs, "face vectors");
 
     std::cerr << "Done testing." << std::endl;
 }
@@ -306,6 +329,7 @@ int main(int argc, char** argv) {
 
     // testEdgeRotations();
     testAxisAngleRotations();
+    // testFaceConversion();
 
     polyscope::show();
 
